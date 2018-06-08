@@ -194,8 +194,7 @@ class SwingingLights: public Task
       strip.setPixelColor(max(0, i - trail_length - 1), 0);
       strip.setPixelColor(min(i + trail_length + 1, strip.numPixels()), 0);
       for(uint16_t j = i - trail_length; j < i + trail_length; j++) {
-        uint8_t val = 128;
-        strip.setPixelColor(j, strip.Color(0, val, 32));
+        strip.setPixelColor(j, strip.Color(0, 255, 64));
       }
       strip.show();
       current_pixel = current_pixel + direction;
