@@ -5,6 +5,8 @@
 #include "schedule.h"
 
 Adafruit_NeoPixel strip_under = Adafruit_NeoPixel(30, 6, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_left = Adafruit_NeoPixel(60, 6, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_right = Adafruit_NeoPixel(60, 6, NEO_GRB + NEO_KHZ800);
 Scheduler sched;
 
 class SpeedMeasure: public Task
@@ -18,7 +20,7 @@ class SpeedMeasure: public Task
     }
     void setup() override {
       pinMode(interruptPin, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(interruptPin), tickFunc, FALLING);
+      attachInterrupt(digitalPinToInterrupt(interruptPin), tickFunc, CHANGE);
     }
     void stop() override {
       detachInterrupt(digitalPinToInterrupt(interruptPin));
@@ -62,6 +64,9 @@ class SpeedMeasure: public Task
     }
 
     static void tickFunc() {
+      if(digitalRead(interruptPin) == LOW) { // Interrupt is on change. Take only the high state
+        return;
+      }
       static unsigned long last_interrupt = 0UL;
       auto ct = millis();
       if(ct - last_interrupt >= 30UL) {
@@ -76,7 +81,7 @@ class SpeedMeasure: public Task
       }
     }
     static volatile unsigned long tickCount;
-    static constexpr int interruptPin = 2;
+    static constexpr int interruptPin = 4;
     static constexpr unsigned long refreshRate = 1000;
     static constexpr float tickDist = 1.2f;
     unsigned long lastTick;
@@ -138,11 +143,12 @@ class DebugLedTask : public Task
       digitalWrite(ledPin, LOW);
     }
   private:
-    static constexpr int ledPin = 13;     // the number of the pushbutton pin
+    static constexpr int ledPin = 13;     // the number of the debug led pin
     bool led_state = false;
-    static constexpr unsigned long on_wait = 75;
-    static constexpr unsigned long off_wait = 425;
+    static constexpr unsigned long on_wait = 150;
+    static constexpr unsigned long off_wait = 1850;
 };
+
 
 class SwingingLights: public Task
 {
@@ -223,20 +229,16 @@ class SwingingLights: public Task
     }
 };
 
-class WeaponFireTask : public Task
+class RailgunFireTask : public Task
 {
   public:
-    WeaponFireTask(Adafruit_NeoPixel& usingStrip)
+    RailgunFireTask(Adafruit_NeoPixel& usingStrip)
     : Task(State::Waiting)
     , strip(usingStrip)
     , current_pixel(0)
     {
     }
     void setup() override {
-      pinMode(buttonPin, INPUT_PULLUP);
-    }
-    bool should_run() override {
-      return digitalRead(buttonPin) == LOW;
     }
     unsigned long step() override {
       auto i = current_pixel;
@@ -265,7 +267,6 @@ class WeaponFireTask : public Task
     }
   private:
     static constexpr uint8_t trail_length = 5;
-    static constexpr int buttonPin = 9;
     Adafruit_NeoPixel& strip;
     uint16_t current_pixel;
 };
@@ -368,12 +369,81 @@ class TaskSleep : public Task
     static constexpr unsigned long stoppedTimeToSleep = 300000;
 };
 
+class ButtonSensingTask: public Task
+{
+  public:
+    enum class ButtonState {
+      Pressed,
+      Released,
+      DoubleClick
+    };
+    ButtonSensingTask(int btnPin)
+      : Task(Task::State::Running),
+      buttonPin(btnPin),
+      state(ButtonState::Released),
+      lastDigitalRead(LOW),
+      lastPressed(0)
+    {
+    }
+
+    ButtonState currentButtonState() const {
+      return state;
+    }
+
+    void setup() override {
+      pinMode(buttonPin, INPUT_PULLUP);
+      lastDigitalRead = digitalRead(buttonPin);
+    }
+
+    unsigned long step() override {
+      auto digRead = digitalRead(buttonPin);
+      if(millis() - lastPressed <= doubleClick) {
+        if(digRead == HIGH && lastDigitalRead == LOW) {
+            state = ButtonState::DoubleClick;
+        }
+      } else {
+        if(digRead == HIGH) {
+            state = ButtonState::Pressed;
+        } else {
+            state = ButtonState::Released;
+        }
+      }
+      if(digRead == HIGH) {
+        lastPressed = millis();
+      }
+      lastDigitalRead = digRead;
+      return refreshRate;
+    }
+  private:
+    int buttonPin;
+    ButtonState state;
+    int lastDigitalRead;
+    unsigned long lastPressed;
+    static constexpr unsigned long refreshRate = 200;
+    static constexpr unsigned long doubleClick = 700;
+
+};
+
+class WeaponStateTask: Task {
+  public:
+    WeaponStateTask(const ButtonSensingTask& button, const SpeedMeasure& speed)
+      :Task(Task::State::Running),
+      buttonSensingTask(button), speedMeasure(speed)
+    {
+    }
+  private:
+    const ButtonSensingTask& buttonSensingTask;
+    const SpeedMeasure& speedMeasure;
+};
+
 volatile unsigned long SpeedMeasure::tickCount = 0;
 DebugLedTask debugLedTask;
 SpeedMeasure speedMeasureTask;
 TaskSleep task_sleep(speedMeasureTask);
 SwingingLights swingingLights(strip_under, speedMeasureTask);
 ShowSpeed show_speed(speedMeasureTask);
+ButtonSensingTask buttonLeft(2);
+ButtonSensingTask buttonRight(3);
 
 void setup() {
   Serial.begin(9600);
@@ -384,6 +454,8 @@ void setup() {
   sched.add_task(swingingLights);
   sched.add_task(show_speed);
   sched.add_task(task_sleep);
+  sched.add_task(buttonLeft);
+  sched.add_task(buttonRight);
   sched.setup_tasks();
 }
 

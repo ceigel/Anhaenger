@@ -12,13 +12,10 @@ class Task
       Running
     };
     State current_state;
-    virtual bool should_run() {
-      return true;
-    }
+  public:
     virtual unsigned long step() {
       return 0;
     }
-  public:
     void play() {
       current_state = State::Running;
     }
@@ -30,15 +27,14 @@ class Task
       if(current_state == State::Running) {
         return step();
       }
-      else if(should_run() == true) {
-        current_state = State::Running;
-        return step();
-      }
       return 1;
     }
     virtual void setup() {}
 
     virtual void stop() {}
+    bool is_running() {
+      return current_state == State::Running;
+    }
 };
 
 class Scheduler
