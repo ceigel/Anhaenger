@@ -19,15 +19,20 @@ class Task
     void play() {
       current_state = State::Running;
     }
-    void pause() {
+    unsigned long pause() {
       current_state = State::Waiting;
+      return pause_wait;
     }
-    Task(State start_state) : current_state(start_state) {}
+    Task(State start_state, unsigned long sleep_delay = 1000)
+      : current_state(start_state),
+      pause_wait(sleep_delay)
+    {
+    }
     virtual unsigned long run() {
       if(current_state == State::Running) {
         return step();
       }
-      return 1;
+      return pause_wait;
     }
     virtual void setup() {}
 
@@ -35,6 +40,12 @@ class Task
     bool is_running() {
       return current_state == State::Running;
     }
+
+    virtual bool can_sleep() const {
+      return true;
+    }
+  private:
+    unsigned long pause_wait;
 };
 
 class Scheduler
@@ -116,12 +127,6 @@ class Scheduler
     Scheduler() : tasks(nullptr), unscheduled(nullptr), prev_millis(millis()) {
     }
 
-    Scheduler(Task* ptasks[]) : tasks(nullptr), unscheduled(nullptr), prev_millis(millis()) {
-      for(unsigned int i = sizeof(ptasks)/sizeof(ptasks[0]); i > 0; --i) {
-        add_task(*ptasks[i-1]);
-      }
-
-    }
     void add_task(Task& task) {
       tasks = new TaskNode { &task, 0, tasks};
     }
