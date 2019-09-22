@@ -36,7 +36,10 @@ class Task
     }
     virtual void setup() {}
 
+    virtual void wakeup() {}
+
     virtual void stop() {}
+
     bool is_running() {
       return current_state == State::Running;
     }
@@ -110,6 +113,15 @@ class Scheduler
       }
     }
 
+    void wakeup_tasks() {
+      TaskNode *p = tasks;
+      while(p) {
+        p->task->wakeup();
+        p = p->next;
+      }
+    }
+
+
     void sleep_now()         // here we put the arduino to sleep
     {
         set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
@@ -160,6 +172,7 @@ class Scheduler
     void sleep() {
       stop_tasks();
       sleep_now();
+      wakeup_tasks();
     }
 };
 
