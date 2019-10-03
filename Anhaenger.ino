@@ -17,7 +17,7 @@ class ButtonPins {
   public:
     static void setup() {
       EICRA = 0x00; // Low level both pins
-      EIMSK = 0x11; // Enable both interrupts
+      EIMSK = 0x03; // Enable both interrupts
     }
 
     static void int0_interrupt() {
@@ -34,6 +34,7 @@ class ButtonPins {
       return tick0Count;
     }
     static unsigned long getInt1TickCount() {
+      Serial.print("int1TickCount: ");Serial.println(tick1Count);
       return tick1Count;
     }
 
@@ -150,7 +151,7 @@ class SpeedMeasure: public Task
     }
     static volatile unsigned long tickCount;
     static const int interruptPin = A4;
-    static constexpr unsigned long stoppedTimeToSleep = 300000;
+    static constexpr unsigned long stoppedTimeToSleep = 150000;
     static constexpr unsigned long refreshRate = 1000;
     static constexpr float tickDist = 1.2f;
     unsigned long lastTick;
@@ -219,8 +220,8 @@ class DebugLedTask : public Task
   private:
     int ledPin;     // the number of the debug led pin
     bool led_state = false;
-    static constexpr unsigned long on_wait = 50;
-    static constexpr unsigned long off_wait = 2500;
+    static constexpr unsigned long on_wait = 100;
+    static constexpr unsigned long off_wait = 2000;
 };
 
 
@@ -435,7 +436,6 @@ class RandomLights : public SubTask
     }
 
     unsigned long step() override {
-      Serial.println("RandomLights::step()");
       fade_strip();
       for(size_t i = 0; i < randomCount; ++i) {
         auto new_led = random(0, strip.numPixels());
@@ -671,7 +671,7 @@ class ButtonSensingTask: public Task
     int buttonPin;
     unsigned long lastTick;
     unsigned long lastPressed;
-    static constexpr unsigned long stoppedTimeToSleep = 300000;
+    static constexpr unsigned long stoppedTimeToSleep = 60000;
 
 };
 
@@ -682,7 +682,7 @@ class WeaponStateTask: public Task {
       laserFireTask(ledStrip),
       railgunFireTask(ledStrip),
       randomLights(ledStrip),
-      subTasks{&randomLights, &laserFireTask, &railgunFireTask},
+      subTasks{&randomLights, &railgunFireTask, &laserFireTask},
       currentSubTask(0),
       buttonSensingTask(button),
       speedMeasure(speed),
@@ -712,7 +712,6 @@ class WeaponStateTask: public Task {
           switch_task(last_switched_task);
         }
         else {
-          Serial.print("Call run on task "); Serial.println(currentSubTask);
           subTasks[currentSubTask]->run();
           return refreshRate;
         }
@@ -752,7 +751,7 @@ class WeaponStateTask: public Task {
     size_t last_switched_task = 1;
     ButtonSensingTask& buttonSensingTask;
     const SpeedMeasure& speedMeasure;
-    static constexpr unsigned long weapon_pause = 60000;
+    static constexpr unsigned long weapon_pause = 20000;
     unsigned long refreshRate;
 };
 
@@ -792,9 +791,9 @@ class ButtonLed: public Task {
       const ButtonSensingTask &button;
 };
 
-Adafruit_NeoPixel strip_under = Adafruit_NeoPixel(28, 6, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip_left = Adafruit_NeoPixel(28, 5, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip_right = Adafruit_NeoPixel(28, 9, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_under = Adafruit_NeoPixel(30, 6, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_left = Adafruit_NeoPixel(41, 5, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_right = Adafruit_NeoPixel(41, 9, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_unused = Adafruit_NeoPixel(0, 10, NEO_GRB + NEO_KHZ800);
 
 Adafruit_NeoPixel* strips[] = {&strip_under, &strip_left, &strip_right, &strip_unused};
