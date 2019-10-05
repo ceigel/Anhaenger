@@ -38,7 +38,11 @@ class Task
 
     virtual void wakeup() {}
 
-    virtual void stop() {}
+    virtual void sleep() {}
+
+    virtual void stop() {
+      current_state = State::Waiting;
+    }
 
     bool is_running() {
       return current_state == State::Running;
@@ -105,10 +109,10 @@ class Scheduler
       }
     }
 
-    void stop_tasks() {
+    void sleep_tasks() {
       TaskNode *p = tasks;
       while(p) {
-        p->task->stop();
+        p->task->sleep();
         p = p->next;
       }
     }
@@ -170,7 +174,7 @@ class Scheduler
       }
     }
     void sleep() {
-      stop_tasks();
+      sleep_tasks();
       sleep_now();
       wakeup_tasks();
     }
