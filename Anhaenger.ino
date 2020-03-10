@@ -103,7 +103,7 @@ class SpeedMeasure: public Task
     }
     static volatile unsigned long tickCount;
     static const int interruptPin = A4;
-    static constexpr unsigned long stoppedTimeToSleep = 150000;
+    static constexpr unsigned long stoppedTimeToSleep = 120000;
     static constexpr unsigned long refreshRate = 1000;
     static constexpr float tickDist = 1.2f;
     unsigned long lastTick;
@@ -125,7 +125,7 @@ class ShowSpeed: public Task {
     , ledPin(pin)
     , speedMeasure(speed)
     , lastTickCount(speed.getTickCount() - 1)
-    , led_state(false)
+    , led_state(true)
     {
     }
     void setup() override {
@@ -161,13 +161,20 @@ class ShowSpeed: public Task {
 class DebugLedTask : public Task
 {
   public:
-    DebugLedTask(int pin) : Task(Task::State::Running), ledPin(pin), on_count(0) {}
+    DebugLedTask(int pin) : Task(Task::State::Running), ledPin(pin), on_count(0), start_millis(0) {}
 
     void setup() override {
       pinMode(ledPin, OUTPUT);
+      record_start();
     }
 
     unsigned long step() override {
+      if(millis() - start_millis > debug_led_duration) {
+        digitalWrite(ledPin, LOW);
+        Serial.println("Debug led off");
+        return stopped_duration;
+      }
+
       led_state = !led_state;
       digitalWrite(ledPin, led_state ? HIGH : LOW);
       if(led_state) {
@@ -184,6 +191,11 @@ class DebugLedTask : public Task
 
     void wakeup() override {
       digitalWrite(ledPin, led_state ? HIGH : LOW);
+      record_start();
+    }
+
+    void record_start() {
+      start_millis = millis();
     }
 
   private:
@@ -193,43 +205,61 @@ class DebugLedTask : public Task
     static constexpr unsigned long long_wait = 300;
     static constexpr unsigned long short_wait = 100;
     static constexpr unsigned long off_wait = 1000;
+    static constexpr unsigned long debug_led_duration = 30000;
+    static constexpr unsigned long stopped_duration = 0xFFFFFFFF;
+    unsigned long start_millis;
 };
 
 
 class SwingingLights: public Task
 {
   public:
-    SwingingLights(Adafruit_NeoPixel& usingStrip, const SpeedMeasure& speedMeasure)
+    SwingingLights(Adafruit_NeoPixel& usingStrip, const SpeedMeasure& speedMeasure, int powerPin)
     : Task(State::Running)
     , stopped(false)
     , current_pixel(trail_length)
     , direction(1)
     , strip(usingStrip)
     , speed(speedMeasure)
+    , _powerPin(powerPin)
     {
+    }
+
+    void setup() override {
+      pinMode(_powerPin, OUTPUT);
+      digitalWrite(_powerPin, LOW);
     }
 
     unsigned long step() override {
       auto acc = speed.acceleration();
-      if(acc <= -3.5) {
-        return showStop();
-      }
-      else if(speed.stoppedTime() > stoppedShutDown) {
+      if(speed.stoppedTime() > stoppedShutDown) {
         return turnOffLights();
       }
+      turnOnLights();
+      if(acc <= -2.0) {
+        return showStop();
+      }
       return showTrail();
+    }
+
+    void sleep() override {
+      digitalWrite(_powerPin, HIGH);
+    }
+
+    void wakeup() override {
     }
 
   private:
     static constexpr uint8_t trail_length = 5;
     static constexpr unsigned long trail_wait = 40;
     static constexpr unsigned long stop_wait = 2000;
-    static constexpr unsigned long stoppedShutDown = 60000;
+    static constexpr unsigned long stoppedShutDown = 30000;
     bool stopped;
     uint16_t current_pixel;
     int8_t direction;
     Adafruit_NeoPixel& strip;
     const SpeedMeasure& speed;
+    int _powerPin;
 
     unsigned long showTrail() {
       if(stopped) {
@@ -252,11 +282,16 @@ class SwingingLights: public Task
       return trail_wait;
     }
 
+    void turnOnLights() {
+      digitalWrite(_powerPin, LOW);
+    }
+
     unsigned long turnOffLights() {
       for(uint16_t i = 0; i < strip.numPixels(); i++) {
         strip.setPixelColor(i, strip.Color(0, 0, 0));
       }
       strip.show();
+      digitalWrite(_powerPin, HIGH);
       return stop_wait;
     }
     unsigned long showStop() {
@@ -267,49 +302,6 @@ class SwingingLights: public Task
       stopped = true;
       return stop_wait;
     }
-};
-
-class TaskSleep : public Task
-{
-  public:
-    TaskSleep(const Task** tasks, size_t count) :
-      Task(Task::State::Running)
-      , _tasks(tasks)
-      , _task_size(count)
-    {
-    }
-
-    void setup() override {
-      pinMode(railPin, OUTPUT);
-      digitalWrite(railPin, HIGH);
-    }
-
-    void sleep() override {
-      digitalWrite(railPin, LOW);
-    }
-    void wakeup() override {
-      digitalWrite(railPin, HIGH);
-    }
-
-    unsigned long step() override {
-      if(can_sleep()) {
-        sched.sleep();
-      }
-      return refreshRate;
-    }
-
-    bool can_sleep() const override {
-      bool cs = true;
-      for(size_t i = 0; i < _task_size; ++i) {
-        cs &= _tasks[i]->can_sleep();
-      }
-      return cs;
-    }
-  private:
-    const Task** _tasks;
-    size_t _task_size;
-    static constexpr int railPin = 8;
-    static constexpr unsigned long refreshRate = 5000;
 };
 
 class SubTask {
@@ -631,22 +623,22 @@ class ButtonSensingTask: public Task
       return true;
     }
 
-    int sensor_readings[2];
+    int sensor_readings[3];
     size_t readings_count;
     size_t reading_index;
     int last_reading;
     unsigned int buttonPin;
     unsigned long lastPressed;
     ButtonState state;
-    static constexpr unsigned long refreshRate = 20;
+    static constexpr unsigned long refreshRate = 10;
     static constexpr unsigned long doubleClickDelay = 700;
-    static constexpr unsigned long stoppedTimeToSleep = 60000;
+    static constexpr unsigned long stoppedTimeToSleep = 120000;
 
 };
 
 class WeaponStateTask: public Task {
   public:
-    WeaponStateTask(ButtonSensingTask& button, const SpeedMeasure& speed, Adafruit_NeoPixel& ledStrip)
+    WeaponStateTask(ButtonSensingTask& button, const SpeedMeasure& speed, Adafruit_NeoPixel& ledStrip, int powerPin)
       :Task(Task::State::Running),
       laserFireTask(ledStrip),
       railgunFireTask(ledStrip),
@@ -655,18 +647,27 @@ class WeaponStateTask: public Task {
       subTasksSize(sizeof(subTasks) / sizeof(subTasks[0])),
       currentSubTask(0),
       buttonSensingTask(button),
-      speedMeasure(speed)
+      speedMeasure(speed),
+      _powerPin(powerPin)
     {
     }
 
     void setup() override {
       buttonSensingTask.setup();
       subTasks[currentSubTask]->start();
+      pinMode(_powerPin, OUTPUT);
+      digitalWrite(_powerPin, LOW);
     }
 
     void sleep() override {
       subTasks[currentSubTask]->stop();
+      digitalWrite(_powerPin, HIGH);
     }
+
+    void wakeup() override {
+      digitalWrite(_powerPin, LOW);
+    }
+
 
     bool can_sleep() const override {
       return buttonSensingTask.can_sleep();
@@ -723,8 +724,46 @@ class WeaponStateTask: public Task {
     size_t last_switched_task = 1;
     ButtonSensingTask& buttonSensingTask;
     const SpeedMeasure& speedMeasure;
+    int _powerPin;
     static constexpr unsigned long weapon_pause = 20000;
     static constexpr unsigned long refreshRate = 300;
+};
+
+class TaskSleep : public Task
+{
+  public:
+    TaskSleep(const Task** tasks, size_t count) :
+      Task(Task::State::Running)
+      , _tasks(tasks)
+      , _task_size(count)
+    {
+    }
+
+    void sleep() override {
+      Serial.println("Sleep TaskSleep");
+    }
+    void wakeup() override {
+      Serial.println("Wakup TaskSleep");
+    }
+
+    unsigned long step() override {
+      if(can_sleep()) {
+        sched.start_sleep();
+      }
+      return refreshRate;
+    }
+
+    bool can_sleep() const override {
+      bool cs = true;
+      for(size_t i = 0; i < _task_size; ++i) {
+        cs &= _tasks[i]->can_sleep();
+      }
+      return cs;
+    }
+  private:
+    const Task** _tasks;
+    size_t _task_size;
+    static constexpr unsigned long refreshRate = 5000;
 };
 
 Adafruit_NeoPixel strip_under = Adafruit_NeoPixel(30, 6, NEO_GRB + NEO_KHZ800);
@@ -735,14 +774,14 @@ Adafruit_NeoPixel strip_unused = Adafruit_NeoPixel(0, 10, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel* strips[] = {&strip_under, &strip_left, &strip_right, &strip_unused};
 
 volatile unsigned long SpeedMeasure::tickCount = 0;
-DebugLedTask debugLedTask(13);
+DebugLedTask debugLedTask(4);
 SpeedMeasure speedMeasureTask;
 ButtonSensingTask buttonLeft(2);
 ButtonSensingTask buttonRight(3);
-SwingingLights swingingLights(strip_under, speedMeasureTask);
-ShowSpeed show_speed(speedMeasureTask, 4);
-WeaponStateTask weaponLeft(buttonLeft, speedMeasureTask, strip_left);
-WeaponStateTask weaponRight(buttonRight, speedMeasureTask, strip_right);
+SwingingLights swingingLights(strip_under, speedMeasureTask, 7);
+ShowSpeed show_speed(speedMeasureTask, 13);
+WeaponStateTask weaponLeft(buttonLeft, speedMeasureTask, strip_left, 8);
+WeaponStateTask weaponRight(buttonRight, speedMeasureTask, strip_right, 8);
 
 const Task* sleep_control[] = {&speedMeasureTask, &buttonLeft, &buttonRight};
 TaskSleep task_sleep(sleep_control, sizeof(sleep_control)/sizeof(sleep_control[0]));
@@ -757,11 +796,11 @@ void setup() {
   sched.add_task(speedMeasureTask);
   sched.add_task(swingingLights);
   sched.add_task(show_speed);
-  sched.add_task(task_sleep);
   sched.add_task(weaponLeft);
   sched.add_task(weaponRight);
   sched.add_task(buttonLeft);
   sched.add_task(buttonRight);
+  sched.add_task(task_sleep);
   sched.setup_tasks();
 }
 

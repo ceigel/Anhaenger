@@ -64,7 +64,7 @@ class Scheduler
       unsigned long delay;
       TaskNode* next;
       TaskNode(Task* t, unsigned long dl, TaskNode* n)
-        : task(t), delay(dl), next(n) {}
+        : task(t), delay(dl), next(n){}
     };
     void update_delays() {
       auto current_millis = millis();
@@ -136,11 +136,21 @@ class Scheduler
         sleep_disable();         // first thing after waking from sleep:
                                  // disable sleep...
     }
+
+    void sleep() {
+      sleep_tasks();
+      delay(100);
+      sleep_now();
+      enter_sleep = false;
+      wakeup_tasks();
+    }
+
     TaskNode* tasks;
     TaskNode* unscheduled;
     unsigned long prev_millis;
+    bool enter_sleep;
   public:
-    Scheduler() : tasks(nullptr), unscheduled(nullptr), prev_millis(millis()) {
+    Scheduler() : tasks(nullptr), unscheduled(nullptr), prev_millis(millis()), enter_sleep(false) {
     }
 
     void add_task(Task& task) {
@@ -155,6 +165,9 @@ class Scheduler
       }
     }
     void run_next() {
+      if(enter_sleep) {
+        sleep();
+      }
       TaskNode* tsk = get_next_task();
       while(tsk)
       {
@@ -167,16 +180,17 @@ class Scheduler
           tsk->delay = next_delay;
           add_task_sorted(tsk);
         }
+        if(enter_sleep) {
+          sleep();
+        }
         tsk = get_next_task();
       }
       if(tasks->delay > 0) {
         delay(tasks->delay);
       }
     }
-    void sleep() {
-      sleep_tasks();
-      sleep_now();
-      wakeup_tasks();
+    void start_sleep() {
+      enter_sleep = true;
     }
 };
 
