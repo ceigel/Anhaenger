@@ -636,6 +636,44 @@ class ButtonSensingTask: public Task
 
 };
 
+class LedsTest: public Task {
+  public:
+    LedsTest(Adafruit_NeoPixel& ledStrip)
+    :Task(Task::State::Running),
+     strip(ledStrip),
+     current_color(0)
+    {
+    }
+
+    void setup() override {
+      current_color = 0;
+    }
+
+    unsigned long step() override {
+      for(uint16_t j = 0 ; j < strip.numPixels(); ++j) {
+        auto r = current_color == 0 ? 127 : 0;
+        auto g = current_color == 1 ? 127 : 0;
+        auto b = current_color == 2 ? 127 : 0;
+        strip.setPixelColor(j, strip.Color(r, g, b));
+      }
+      strip.show();
+      current_color = current_color >= 2 ? 0 : current_color + 1;
+      return refreshRate;
+    }
+    void stop() override {
+      for(uint16_t i = 0; i < strip.numPixels(); ++i)
+      {
+        strip.setPixelColor(i, 0);
+      }
+      strip.show();
+    }
+
+  private:
+    Adafruit_NeoPixel& strip;
+    unsigned int current_color;
+    static constexpr unsigned long refreshRate = 2000;
+};
+
 class WeaponStateTask: public Task {
   public:
     WeaponStateTask(ButtonSensingTask& button, const SpeedMeasure& speed, Adafruit_NeoPixel& ledStrip, int powerPin)
@@ -769,7 +807,7 @@ class TaskSleep : public Task
 Adafruit_NeoPixel strip_under = Adafruit_NeoPixel(30, 6, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_left = Adafruit_NeoPixel(41, 5, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_right = Adafruit_NeoPixel(41, 9, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip_unused = Adafruit_NeoPixel(0, 10, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip_unused = Adafruit_NeoPixel(40, 10, NEO_GRB + NEO_KHZ800);
 
 Adafruit_NeoPixel* strips[] = {&strip_under, &strip_left, &strip_right, &strip_unused};
 
@@ -782,6 +820,7 @@ SwingingLights swingingLights(strip_under, speedMeasureTask, 7);
 ShowSpeed show_speed(speedMeasureTask, 13);
 WeaponStateTask weaponLeft(buttonLeft, speedMeasureTask, strip_left, 8);
 WeaponStateTask weaponRight(buttonRight, speedMeasureTask, strip_right, 8);
+LedsTest tests(strip_unused);
 
 const Task* sleep_control[] = {&speedMeasureTask, &buttonLeft, &buttonRight};
 TaskSleep task_sleep(sleep_control, sizeof(sleep_control)/sizeof(sleep_control[0]));
@@ -801,6 +840,7 @@ void setup() {
   sched.add_task(buttonLeft);
   sched.add_task(buttonRight);
   sched.add_task(task_sleep);
+  sched.add_task(tests);
   sched.setup_tasks();
 }
 
